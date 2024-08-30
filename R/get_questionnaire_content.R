@@ -7,8 +7,6 @@
 #'
 #' @param location A string specifying the directory where the JSON files are located. The function
 #'   recursively searches this directory for all files with a `.json` extension.
-#' @param remove_html A logical value indicating whether HTML tags should be removed from the text
-#'   fields within the questionnaire content. Default is `FALSE`.
 #' @param remove_revisions A logical value indicating whether to remove older revisions of questions
 #'   when multiple versions are available. If `TRUE`, only the latest revision of each question is kept.
 #'   Default is `TRUE`.
@@ -19,15 +17,15 @@
 #' @importFrom susometa parse_questionnaire
 #' @examples
 #' # Assuming JSON files are in the "questionnaires" directory
-#' qx_structure <- get_questionnaire_content(location = "path/to/questionnaires")
+#' qx_structure <- get_qnr_content(location = "path/to/questionnaires")
 #' @export
-get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remove_revisions = TRUE) {
+get_qnr_content <- function(location = NULL, remove_revisions = TRUE) {
   # List all JSON files in the specified directory
   js_files <- list.files(file.path(location), pattern = "*.json", recursive = TRUE)
 
   # Read and process each JSON file
   js_list <- lapply(js_files, function(x) {
-    dt <- as.data.table(susometa::parse_questionnaire(file.path(location, x)))
+    dt <- data.table::as.data.table(susometa::parse_questionnaire(file.path(location, x)))
     dt.help <- jsonlite::fromJSON(txt = (file.path(location, x)))
 
     dt[, c("instrt", "qx_id", "revision") := .(
@@ -37,7 +35,7 @@ get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remo
     )]
   })
 
-  document <- rbindlist(js_list, fill = TRUE)
+  document <- data.table::rbindlist(js_list, fill = TRUE)
 
   # Identify important columns
   level_names <- names(document)[grep("^l_", names(document))]
@@ -48,12 +46,12 @@ get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remo
   document[type == "StaticText", varname := public_key]
 
   # Replace text with question text where necessary
-  dt <- copy(document)
+  dt <- data.table::copy(document)
   dt[is.na(text) & !is.na(question_text), text := question_text]
   dt[type == "Variable", text := label_variable]
   dt[is.na(text) & !is.na(title), text := title]
   assertthat::assert_that(assertthat::noNA(dt$text))
-  setnames(dt, "public_key", "question_key")
+  data.table::setnames(dt, "public_key", "question_key")
 
   # Remove older revisions if requested
   if (remove_revisions) {
@@ -76,7 +74,7 @@ get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remo
   subsec_dt <- Filter(function(x) !all(is.na(x)), subsec_dt)
   if (nrow(subsec_dt) > 0) {
     lev_subsec_names <- names(subsec_dt)[grep("^l_", names(subsec_dt))]
-    setcolorder(subsec_dt, c("instrt", "title", lev_subsec_names))
+    data.table::setcolorder(subsec_dt, c("instrt", "title", lev_subsec_names))
 
     for (value in 0:length(lev_subsec_names)) {
       current_var <- paste0("l_", value)
@@ -100,8 +98,8 @@ get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remo
                     by = c(reduced_subsec_names, "instrt"), all.x = TRUE)
       }
 
-      setnames(dt, c("title", "public_key"), c(paste0("title_", value), paste0("key_", value)))
-      setcolorder(dt, c(paste0("title_", value), paste0("key_", value)))
+      data.table::setnames(dt, c("title", "public_key"), c(paste0("title_", value), paste0("key_", value)))
+      data.table::setcolorder(dt, c(paste0("title_", value), paste0("key_", value)))
 
       count <- count + 1
     }
@@ -109,17 +107,14 @@ get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remo
   }
 
   sub.sec.keys <- names(dt)[grepl("key_\\d", names(dt))]
-  setcolorder(dt, c(rev(sub.sec.keys), "title_key"))
-  dt[, section_key := fcoalesce(.SD), .SDcols = patterns("title_key|key_\\d")][, c("title_key", sub.sec.keys) := NULL]
+  data.table::setcolorder(dt, c(rev(sub.sec.keys), "title_key"))
+  dt[, section_key := data.table::fcoalesce(.SD), .SDcols = patterns("title_key|key_\\d")][, c("title_key", sub.sec.keys) := NULL]
   dt[, section_key := gsub("\\-", "", section_key)]
   dt[, question_key := gsub("\\-", "", question_key)]
-
-  setcolorder(dt, c("instrt", "qx_id", "section_title", titles, "section_key", "question_key", "text", "varname"))
-
-  if (remove_html) {
-    char_cols <- names(dt)[sapply(dt, is.character)]
-    dt[, (char_cols) := lapply(.SD, remove_html), .SDcols = char_cols]
-  }
+  sub_sec_cols <- names(dt)[grepl("title_\\d",names(dt))]
+  data.table::setcolorder(dt, c("instrt", "qx_id", "section_title",
+                                sub_sec_cols,
+                                "section_key", "question_key", "text", "varname"))
 
   dt[is_roster == TRUE, type := "Roster"]
   dt[type == "Group" & section_title == text, type := "Section"]
@@ -127,8 +122,8 @@ get_questionnaire_content <- function(location = NULL, remove_html = FALSE, remo
 
   dt[, c("name_variable", "document.id", "label_variable") := NULL]
 
-  setorder(dt, "qx_id", "varname", -"revision")
-  dt <- rbindlist(list(unique(dt[!is.na(varname) & varname != ""], by = c("qx_id", "varname", "revision")),
+  data.table::setorder(dt, "qx_id", "varname", -"revision")
+  dt <- data.table::rbindlist(list(unique(dt[!is.na(varname) & varname != ""], by = c("qx_id", "varname", "revision")),
                        dt[is.na(varname) | varname == ""]))
 
   setcolorder(dt, c("instrt", "qx_id", "varname", "type"))

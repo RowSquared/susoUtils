@@ -3,7 +3,7 @@
 export(action_codes)
 export(analyze_para)
 export(get_int_report)
-export(get_questionnaire_content)
+export(get_qnr_content)
 export(label_interview_status)
 export(label_role)
 export(read_many_para)
